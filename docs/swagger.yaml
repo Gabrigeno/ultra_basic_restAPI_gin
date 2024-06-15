@@ -1,0 +1,118 @@
+definitions:
+  schemas.Item:
+    properties:
+      id:
+        type: integer
+      name:
+        type: string
+    type: object
+info:
+  contact: {}
+paths:
+  /items:
+    get:
+      description: Retrieve a list of all items
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/schemas.Item'
+            type: array
+      summary: Get all items
+    post:
+      consumes:
+      - application/json
+      description: Create a new item with the provided JSON data
+      parameters:
+      - description: Item object
+        in: body
+        name: item
+        required: true
+        schema:
+          $ref: '#/definitions/schemas.Item'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/schemas.Item'
+      summary: Create a new item
+  /items/{id}:
+    delete:
+      description: Delete an item by its ID
+      parameters:
+      - description: Item ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+      summary: Delete item by ID
+    get:
+      description: Retrieve an item by its ID
+      parameters:
+      - description: Item ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/schemas.Item'
+      summary: Get item by ID
+    put:
+      consumes:
+      - application/json
+      description: Update an item by its ID with the provided JSON data
+      parameters:
+      - description: Item ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Updated item object
+        in: body
+        name: item
+        required: true
+        schema:
+          $ref: '#/definitions/schemas.Item'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/schemas.Item'
+      summary: Update an item by ID
+  /items/search:
+    get:
+      description: Retrieve items whose name contains the specified string
+      parameters:
+      - description: Item name to search
+        in: query
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/schemas.Item'
+            type: array
+      summary: Search items by name
+swagger: "2.0"
