@@ -41,8 +41,15 @@ http://localhost:8080/swagger/index.html
 ## test
 
 _to update_
-fro now in ` tests` directory run:
+for now in ` tests` directory run:
 
 ```
 go test
+```
+
+## Docker
+
+```
+- docker build -t my-gin-api .
+- docker run -p 8080:8080 my-gin-api
 ```
