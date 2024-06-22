@@ -40,11 +40,8 @@ http://localhost:8080/swagger/index.html
 
 ## test
 
-_to update_
-for now in ` tests` directory run:
-
 ```
-go test
+go test ./...
 ```
 
 ## Docker
