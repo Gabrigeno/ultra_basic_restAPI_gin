@@ -1,12 +1,16 @@
 package controllers
 
 import (
+	"context"
+	"encoding/json"
 	"gin-try/schemas"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis"
 )
 
 var items = []schemas.Item{
@@ -14,13 +18,44 @@ var items = []schemas.Item{
 	{ID: 2, Name: "item two"},
 }
 
+var ctx = context.Background()
+var rdb *redis.Client
+
+// SetRedis imposta la connessione a Redis per i controllers
+func SetRedis(redisClient *redis.Client) {
+	rdb = redisClient
+}
+
+const (
+	cacheDuration = 10 * time.Minute
+	cachePrefix   = "items:"
+)
+
 // @Summary Get all items
 // @Description Retrieve a list of all items
 // @Produce json
 // @Success 200 {array} schemas.Item
 // @Router /items [get]
 func GetItems(c *gin.Context) {
-	c.JSON(http.StatusOK, items)
+	cacheKey := cachePrefix + "all"
+
+	// Controlla se gli items sono presenti nella cache
+	val, err := rdb.Get(cacheKey).Result()
+	if err == redis.Nil {
+		// Se non sono nella cache, recuperali dalla sorgente
+		var items []schemas.Item = getItemsFromSource()
+		// Salva gli items nella cache
+		jsonData, _ := json.Marshal(items)
+		rdb.Set(cacheKey, jsonData, cacheDuration)
+		c.JSON(http.StatusOK, items)
+	} else if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	} else {
+		// Se sono nella cache, restituiscili
+		var items []schemas.Item
+		json.Unmarshal([]byte(val), &items)
+		c.JSON(http.StatusOK, items)
+	}
 }
 
 // @Summary Get item by ID
@@ -30,19 +65,30 @@ func GetItems(c *gin.Context) {
 // @Success 200 {object} schemas.Item
 // @Router /items/{id} [get]
 func GetItemsByID(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid ID"})
-		return
-	}
+	id := c.Param("id")
+	cacheKey := cachePrefix + id
 
-	for _, item := range items {
-		if item.ID == id {
-			c.JSON(http.StatusOK, item)
+	// Controlla se l'item è presente nella cache
+	val, err := rdb.Get(cacheKey).Result()
+	if err == redis.Nil {
+		// Se non è nella cache, recuperalo dalla sorgente
+		item := getItemFromSourceByID(id)
+		if item == nil {
+			c.JSON(http.StatusNotFound, gin.H{"message": "Item not found"})
 			return
 		}
+		// Salva l'item nella cache
+		jsonData, _ := json.Marshal(item)
+		rdb.Set(cacheKey, jsonData, cacheDuration)
+		c.JSON(http.StatusOK, item)
+	} else if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	} else {
+		// Se è nella cache, restituiscilo
+		var item schemas.Item
+		json.Unmarshal([]byte(val), &item)
+		c.JSON(http.StatusOK, item)
 	}
-	c.JSON(http.StatusNotFound, gin.H{"message": "Item not found"})
 }
 
 // @Summary Search items by name
@@ -58,14 +104,25 @@ func SearchItemsByName(c *gin.Context) {
 		return
 	}
 
-	var foundItems []schemas.Item
-	for _, item := range items {
-		if strings.Contains(strings.ToLower(item.Name), strings.ToLower(name)) {
-			foundItems = append(foundItems, item)
-		}
-	}
+	cacheKey := cachePrefix + "search:" + name
 
-	c.JSON(http.StatusOK, foundItems)
+	// Controlla se gli items sono presenti nella cache
+	val, err := rdb.Get(cacheKey).Result()
+	if err == redis.Nil {
+		// Se non sono nella cache, recuperali dalla sorgente
+		var foundItems []schemas.Item = searchItemsFromSourceByName(name)
+		// Salva gli items nella cache
+		jsonData, _ := json.Marshal(foundItems)
+		rdb.Set(cacheKey, jsonData, cacheDuration)
+		c.JSON(http.StatusOK, foundItems)
+	} else if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	} else {
+		// Se sono nella cache, restituiscili
+		var foundItems []schemas.Item
+		json.Unmarshal([]byte(val), &foundItems)
+		c.JSON(http.StatusOK, foundItems)
+	}
 }
 
 // @Summary Delete item by ID
@@ -75,20 +132,22 @@ func SearchItemsByName(c *gin.Context) {
 // @Success 204 "No Content"
 // @Router /items/{id} [delete]
 func DeleteItem(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid ID"})
+	id := c.Param("id")
+
+	// Elimina l'item dalla sorgente
+	if !deleteItemFromSource(id) {
+		c.JSON(http.StatusNotFound, gin.H{"message": "Item not found"})
 		return
 	}
 
-	for i, item := range items {
-		if item.ID == id {
-			items = append(items[:i], items[i+1:]...)
-			c.JSON(http.StatusNoContent, gin.H{"message": "Item deleted"})
-			return
-		}
-	}
-	c.JSON(http.StatusNotFound, gin.H{"message": "Item not found"})
+	// Elimina l'item dalla cache
+	cacheKey := cachePrefix + id
+	rdb.Del(cacheKey)
+
+	// Elimina la cache di tutti gli items
+	rdb.Del(cachePrefix + "all")
+
+	c.JSON(http.StatusNoContent, gin.H{"message": "Item deleted"})
 }
 
 // @Summary Create a new item
@@ -104,8 +163,12 @@ func CreateItem(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-	newItem.ID = len(items) + 1
-	items = append(items, newItem)
+	newItem.ID = len(getItemsFromSource()) + 1 // Genera un nuovo ID
+	saveItemToSource(newItem)
+
+	// Invalida la cache di tutti gli items
+	rdb.Del(cachePrefix + "all")
+
 	c.JSON(http.StatusCreated, newItem)
 }
 
@@ -118,11 +181,7 @@ func CreateItem(c *gin.Context) {
 // @Success 200 {object} schemas.Item
 // @Router /items/{id} [put]
 func UpdatedItem(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid ID"})
-		return
-	}
+	id := c.Param("id")
 
 	var updatedItem schemas.Item
 	if err := c.BindJSON(&updatedItem); err != nil {
@@ -130,12 +189,70 @@ func UpdatedItem(c *gin.Context) {
 		return
 	}
 
-	for i, item := range items {
-		if item.ID == id {
-			items[i].Name = updatedItem.Name
-			c.JSON(http.StatusOK, items[i])
-			return
+	if !updateItemInSource(id, updatedItem) {
+		c.JSON(http.StatusNotFound, gin.H{"message": "Item not found"})
+		return
+	}
+
+	// Invalida la cache del singolo item e di tutti gli items
+	cacheKey := cachePrefix + id
+	rdb.Del(cacheKey)
+	rdb.Del(cachePrefix + "all")
+
+	c.JSON(http.StatusOK, updatedItem)
+}
+
+// Funzioni fittizie per interagire con la sorgente dati
+func getItemsFromSource() []schemas.Item {
+	return []schemas.Item{
+		{ID: 1, Name: "item one"},
+		{ID: 2, Name: "item two"},
+	}
+}
+
+func getItemFromSourceByID(id string) *schemas.Item {
+	items := getItemsFromSource()
+	for _, item := range items {
+		if strconv.Itoa(item.ID) == id {
+			return &item
 		}
 	}
-	c.JSON(http.StatusNotFound, gin.H{"message": "Item not found"})
+	return nil
+}
+
+func searchItemsFromSourceByName(name string) []schemas.Item {
+	items := getItemsFromSource()
+	var foundItems []schemas.Item
+	for _, item := range items {
+		if strings.Contains(strings.ToLower(item.Name), strings.ToLower(name)) {
+			foundItems = append(foundItems, item)
+		}
+	}
+	return foundItems
+}
+
+func deleteItemFromSource(id string) bool {
+	items := getItemsFromSource()
+	for i, item := range items {
+		if strconv.Itoa(item.ID) == id {
+			items = append(items[:i], items[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+func saveItemToSource(item schemas.Item) {
+	// Salva l'item nella sorgente (può essere un database, un file, ecc.)
+}
+
+func updateItemInSource(id string, updatedItem schemas.Item) bool {
+	items := getItemsFromSource()
+	for i, item := range items {
+		if strconv.Itoa(item.ID) == id {
+			items[i] = updatedItem
+			return true
+		}
+	}
+	return false
 }
