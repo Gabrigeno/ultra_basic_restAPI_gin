@@ -8,9 +8,14 @@ services:
       - "8080:8080"
     environment:
       REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: redisPassword  # Aggiungi la variabile d'ambiente per la password
     depends_on:
       - redis
+
   redis:
     image: redis
     ports:
       - "6379:6379"
+    volumes:
+      - ./redis.conf:/usr/local/etc/redis/redis.conf
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
