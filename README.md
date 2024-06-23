@@ -1,5 +1,6 @@
 ## Run restAPI
 ```
+- sudo systemctl start redis-server
 - go run main.go
 ```
 ## try the server
