@@ -13,13 +13,12 @@ import (
 	"github.com/go-redis/redis"
 )
 
-var items = []schemas.Item{
+var ctx = context.Background()
+var rdb *redis.Client
+var itemsStore = []schemas.Item{
 	{ID: 1, Name: "item one"},
 	{ID: 2, Name: "item two"},
 }
-
-var ctx = context.Background()
-var rdb *redis.Client
 
 // SetRedis imposta la connessione a Redis per i controllers
 func SetRedis(redisClient *redis.Client) {
@@ -202,17 +201,13 @@ func UpdatedItem(c *gin.Context) {
 	c.JSON(http.StatusOK, updatedItem)
 }
 
-// Funzioni fittizie per interagire con la sorgente dati
+// Funzioni per interagire con la sorgente dati
 func getItemsFromSource() []schemas.Item {
-	return []schemas.Item{
-		{ID: 1, Name: "item one"},
-		{ID: 2, Name: "item two"},
-	}
+	return itemsStore
 }
 
 func getItemFromSourceByID(id string) *schemas.Item {
-	items := getItemsFromSource()
-	for _, item := range items {
+	for _, item := range itemsStore {
 		if strconv.Itoa(item.ID) == id {
 			return &item
 		}
@@ -221,9 +216,8 @@ func getItemFromSourceByID(id string) *schemas.Item {
 }
 
 func searchItemsFromSourceByName(name string) []schemas.Item {
-	items := getItemsFromSource()
 	var foundItems []schemas.Item
-	for _, item := range items {
+	for _, item := range itemsStore {
 		if strings.Contains(strings.ToLower(item.Name), strings.ToLower(name)) {
 			foundItems = append(foundItems, item)
 		}
@@ -232,10 +226,9 @@ func searchItemsFromSourceByName(name string) []schemas.Item {
 }
 
 func deleteItemFromSource(id string) bool {
-	items := getItemsFromSource()
-	for i, item := range items {
+	for i, item := range itemsStore {
 		if strconv.Itoa(item.ID) == id {
-			items = append(items[:i], items[i+1:]...)
+			itemsStore = append(itemsStore[:i], itemsStore[i+1:]...)
 			return true
 		}
 	}
@@ -243,14 +236,13 @@ func deleteItemFromSource(id string) bool {
 }
 
 func saveItemToSource(item schemas.Item) {
-	// Salva l'item nella sorgente (può essere un database, un file, ecc.)
+	itemsStore = append(itemsStore, item)
 }
 
 func updateItemInSource(id string, updatedItem schemas.Item) bool {
-	items := getItemsFromSource()
-	for i, item := range items {
+	for i, item := range itemsStore {
 		if strconv.Itoa(item.ID) == id {
-			items[i] = updatedItem
+			itemsStore[i] = updatedItem
 			return true
 		}
 	}
