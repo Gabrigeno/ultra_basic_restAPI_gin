@@ -49,7 +49,7 @@ go test ./...
 
 ```
 - docker build -t my-gin-api .
-- docker run -p 8080:8080 my-gin-api
+-  docker run -d --name my-app-container -p 8080:8080 --network="host" my-gin-api
 ```
 or
 
