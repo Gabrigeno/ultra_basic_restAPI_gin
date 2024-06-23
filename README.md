@@ -14,6 +14,7 @@ POST
 - curl -X POST http://localhost:8080/items -H "Content-Type: application/json" -d '{"name": "New Item"}'
 ```
 the new file ID is set automatically
+
 PUT
 ```
 - curl -X PUT http://localhost:8080/items/3 -H "Content-Type: application/json" -d '{"name": "Updated Item"}'
@@ -49,4 +50,9 @@ go test ./...
 ```
 - docker build -t my-gin-api .
 - docker run -p 8080:8080 my-gin-api
+```
+or
+
+```
+- docker compose up
 ```
